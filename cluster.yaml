@@ -1,0 +1,11 @@
+apiVersion: ctlptl.dev/v1alpha1
+kind: Cluster
+product: k3d
+registry: ctlptl-prometheus-registry
+name: k3d-prometheus
+k3d:
+  v1alpha5Simple:
+    volumes:
+      - volume: /Users/alex.hopgood/.docker/certs.d/CloudFlareManagedG2.pem:/etc/ssl/certs/CloudFlareManagedG2.pem
+        nodeFilters:
+          - all
