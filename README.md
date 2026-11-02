@@ -22,3 +22,18 @@ docker rm config
 ```
 docker run --rm docker.io/prom/prometheus:v3.2.1 -h
 ```
+
+## Lab 4.2 Starting Prometheus
+Create a docker network for prometheus
+```
+docker network create --driver bridge lab
+```
+* Run the prometheus container in the network 
+```
+docker run -d -p 9090:9090 --name prometheus -h prometheus --net lab docker.io/prom/prometheus:v3.2.1
+```
+* [http://0.0.0.0:9091/status](http://0.0.0.0:9091/status)
+* [http://0.0.0.0:9091/metrics](http://0.0.0.0:9091/metrics)
+* [http://0.0.0.0:9091/query](http://0.0.0.0:9091/query)
+* [http://0.0.0.0:9091/alerts](http://0.0.0.0:9091/alerts)
+* [http://0.0.0.0:9091/targets](http://0.0.0.0:9091/targets)
