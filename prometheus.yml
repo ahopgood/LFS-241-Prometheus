@@ -27,3 +27,10 @@ scrape_configs:
 
     static_configs:
       - targets: ["localhost:9090"]
+
+  - job_name: "demo"
+    static_configs:
+      - targets:
+        - 'demo1:8080'
+        - 'demo2:8080'
+        - 'demo3:8080' # using hostname from docker run / docker-compose for discovery

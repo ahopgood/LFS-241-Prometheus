@@ -50,3 +50,57 @@ Prometheus exposes itself as a scrape target so you can query for it:
 * `prometheus_tsdb_head_samples_appended_total` the total number of samples ingested into prometheus's local storage
 * `rate(prometheus_tsdb_head_samples_appended_total[1m])` the number of samples ingested per second as _averaged_ over a 1-minute window
 * `up{job="prometheus"}` value of the **synthetic** `up` metric for prometheus which is set to 0 when a scrape fails and 1 when successful.
+
+## Lab 5.1 - Monitoring a Demo Service
+Clone a demo app:
+```
+git clone --depth=1 https://github.com/lftraining/LFS241.git
+```
+Build the docker image:
+```
+cd ~/LFS241/demo-service-source
+docker build -t prometheus-demo-service .
+```
+Spin up three instances
+```
+docker run -d --name d1 -h d1 --net lab prometheus-demo-service
+docker run -d --name d2 -h d2 --net lab prometheus-demo-service
+docker run -d --name d3 -h d3 --net lab prometheus-demo-service
+```
+Each app will serve up metrics on `http://<container-ip>:<port>/metrics`.
+You can inspect the metrics manually:
+```
+curl http://$(docker inspect d1 \
+-f '{{ .NetworkSettings.Networks.lab.IPAddress }}'):8080/metrics
+```
+If running via docker compose:
+```
+curl http://localhost:8084/metrics
+curl http://localhost:8085/metrics
+curl http://localhost:8086/metrics
+```
+
+The demo service generates four simulated types of metrics:
+1. Metrics about an HTTP API server (RED - Requests, Errors, Duration)
+2. CPU usage metrics
+3. Disk usage and total size metrics
+4. Metrics about a batch job that runs periodically and can fail with a certain probability
+
+Inform prometheus of our demo services by updating its configuration file:
+```yaml
+scrape_configs:
+  - job_name: 'demo'
+    static_configs:
+      targets:
+        - 'd1:8080'
+        - 'd2:8080'
+        - 'd3:8080'
+```
+
+Add the file as a volume to prometheus:
+```
+docker rm --force promoetheus
+docker run -d -p 9090:9090 --name prometheus -h prometheus --net lab \
+    -v ~/prometheus/:/etc/prometheus/ docker.io/prom/prometheus:v3.2.1
+```
+You will be able to see the demo services on [http://localhost:9091/targets](http://localhost:9091/targets)
