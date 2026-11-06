@@ -132,8 +132,8 @@ rate(demo_api_request_duration_seconds_count{job="demo"}[5m])
 * Gauge metrics track a value that can go _up_ or _down_ e.g. temperatures or hard disk space
 * Counters can only increase
 * Use `delta()` and `deriv()` for gauges
-* `delta()` only cosiders the _first_ and _last_ data point under the provided time window
-  * It will disregard trends inbetween the data points
+* `delta()` only considers the _first_ and _last_ data point under the provided time window
+  * It will disregard trends in-between the data points
 * Obtain the increase in disk usage over 15 minutes
 ```
 delta(demo_disk_usage_bytes{job="demo"}[15m])
@@ -149,3 +149,96 @@ deriv(demo_disk_usage_bytes{job="demo"}[15m])
 ```
 predict_linear(demo_disk_usage_bytes{job="demo"}[15m], 3600)
 ```
+
+## Lab 5.5 Aggregations
+Time series data is _highly dimensional_ which is helpful for drilling down.  
+But other times you'll want to **aggregate** over dimensions to show overall results.  
+* To find the **total** number of requests our demo service is handling _per second_ you can use `sum` to add up the individual rates:
+```
+sum(rate(demo_api_request_duration_seconds_count{job="demo"}[5m]))
+```
+  * On its own the rate will display multiple dimensions: path, method, status and instance
+  * Sum will aggregate these into a single series.
+* How can we _preserve_ some of the dimensions and aggregate those we don't care about?
+* `without()` will allow us to exclude certain fields from the series and to aggregate by them
+```
+sum without(method, status) (rate(demo_api_request_duration_seconds_count{job="demo"}[5m]))
+```
+* `by()` is the opposite and will include the labels specified in the output series
+```
+sum by(instance, path, job) (rate(demo_api_request_duration_seconds_count{job="demo"}[5m]))
+```
+* Use whichever requires the least modification
+
+### Aggregation operators
+These aggregators all support `without()` and `by()`
+
+* `sum()` calculate the sum over dimensions
+* `min()` select the minimum value across dimensions
+* `max()` select the maximum value across dimensions
+* `avg()` calculate the average over dimensions
+* `stddev()` calculate the population standard deviation over dimensions
+* `stdvar()` calculate the population standard variance over dimensions
+* `count()` count the number of series in a vector
+* `count_values(value_label, ...)` counts the number of series for each **distinct** sample value
+* `bottomk(k, ...)` selects the smallest k elements by sample value
+* `top(k, ...)` selects the smallest k elements by sample value
+* `quantile(phi, ...)` calculates the phi-quantile (O =< phi =< 1) over dimensions
+
+## Lab 5.6 Arithmetic
+* Basic arithmetic is supported: `(2 + 3 / 6) * 2^2`
+* You can multiply a vector (list) by a scalar (number)
+* If you wanted to display a byte value as GiB instead you can do:
+```
+demo_batch_last_run_processed_bytes{job="demo"} / 1024^3
+```
+* Scalar operations are applied to _every element_ (series) in the vector
+* [Binary Operators documentation](https://prometheus.io/docs/prometheus/latest/querying/operators/#binary-operators)
+* You can do arithmetic _between vectors_ (across time series)
+  * Prometheus will match series with **identical** label sets on both sides of the operation
+* Common example is to calculate the average HTTP response time from a histogram's `_count` series (total number of requests) and `_sum` series (total time spent in requests):
+  * This preserves _all_ dimensions in the output 
+  * The only difference between the two series is the metric name
+```
+rate(demo_api_request_duration_seconds_count{job="demo"}[5m])
+/
+rate(demo_api_request_duration_seconds_sum{job="demo"}[5m])
+```
+* What if all dimensions don't match?
+* Trying to calculate the ratio errors vs total rate of all requests (will be a number between 0 and 1):
+```
+sum without(status)
+(rate(demo_api_request_duration_seconds_count{job="demo",status="500"}[5m]))
+/
+sum without(status)
+(rate(demo_api_request_duration_seconds_count{job="demo"}[5m]))
+```
+* We can aggregate away the labels that one series doesn't have
+  * We do `without(status)` **BUT** we add the `status="500"` dimension to the series where it exists
+  * Why won't the following work?
+  ```
+  rate(demo_api_request_duration_seconds_count{job="demo", status="500"}[5m])
+  /
+  rate(demo_api_request_duration_seconds_count{job="demo" }[5m])
+  ```
+    * The left hand operator is evaluated first and its dimensions must be consistent
+    * Because the right hand `demo_api_request_duration_seconds_count` doesn't match the left hand dimension it would be dropped from the output
+    * It is equivalent to `rate(demo_api_request_duration_seconds_count{job="demo", status!="500"} [5m])` which makes the mismatch clearer
+    * We're selecting `status="500"` on the left and the right value `status!="500"` doesn't match 
+
+### Vector matching
+* [Vector matching documentation](https://prometheus.io/docs/prometheus/latest/querying/operators/#vector-matching)
+* What if one has more dimensions than the other but we want to reflect it in the mapping?
+  * `demo_num_cpus` tells you the number of cores
+  * `demo_cpu_usage_seconds_total` has a `mode` label that splits the CPU usage into `idle`, `system`, `user`
+  * We want per-mode CPU usage divided by the number of cores, we tell the division operator to _group_ its results by the extra `mode` label
+  * Use the `on()` operator to select `job, instance`, thereby excluding `mode`
+  * `ignoring()` is the opposite of `on()` 
+  * Then use the `group_left` modifier to map the data from the series on the right onto the series on the left
+  ```
+  rate(demo_cpu_usage_seconds_total{job="demo"}[5m])
+  / on(job, instance) group_left
+  demo_num_cpus{job="demo"}
+  ```
+  * e.g `idle` rate is at 2.0, normalised over 4 CPU cores would become `0.5`
+  * If there are more dimensions on the right then we use `group_right` 
