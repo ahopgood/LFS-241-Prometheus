@@ -241,4 +241,57 @@ sum without(status)
   demo_num_cpus{job="demo"}
   ```
   * e.g `idle` rate is at 2.0, normalised over 4 CPU cores would become `0.5`
-  * If there are more dimensions on the right then we use `group_right` 
+  * If there are more dimensions on the right then we use `group_right`
+
+## Lab 6.1 Setting Up Grafana
+[Grafana documentation](https://grafana.com/docs/)
+```
+docker run -d -p 3000:3000 --name grafana -h grafana --net lab \
+    docker.io/grafana/grafana:11.6.0
+```
+
+## Lab 6.2 Creating a Prometheus Datasource
+* `Home` > `Add your first data source` > `Prometheus` 
+  * Name: `Demo Prometheus`
+  * URL: `http://prometheus:9090`
+  * Leave other fields as defaults
+  
+## Lab 6.3 Creating a Dashboard
+* Select `+` in the top right corner of the home screen to create a new dashboard
+* Select `Add visualisation`
+* Select our new prometheus datasource
+* Set the time range to `Last hour`
+* Switch query expression section from `Builder` to `Code`
+* Add a query
+```
+sum without(instance, status) (rate(demo_api_request_duration_seconds_count{job="demo"}[1m]))
+```
+* Select `Run queries`
+* Under the query box: `Options` > `Legend` > `Custom`
+  * Replace default text with `{{path}}: {{method}}` to display a legend we want
+* Set panel title to `Requests [rate-1m]`
+* `Save Dashboard` as `Demo Service`
+
+### Further visualisations
+* The total error rate, broken up by method and status code:
+  * Title `Errors [rate-5m]`
+  ```
+  sum without(instance, path) (rate(demo_api_request_duration_seconds_count{status=~"5..",job="demo"}[5m]))
+  ```
+* 90th-percentile latency, broken up by path and method:
+  * Title `Latency [90th]`
+  ```
+  histogram_quantile(0.9, sum without(instance, status) (rate(demo_api_request_duration_seconds_bucket{job="demo"}[5m])))
+  ```
+  * In the options > Standard options > Unit > Time > `Seconds`
+* Show all service instances in a table whose internal batch job hasn't completed successfully in
+  over 60 seconds
+  * Add a new panel > `visualisation` > Top right > Change Time series to `Table`
+  * Set title to `Delayed batch jobs [seconds since last success]`
+  ```
+  max by (instance) (time() - demo_batch_last_success_timestamp_seconds{job="demo"} > 60)
+  ```
+  * Options (under query) > Format > Table
+  * Options (under query) > Format > Type > Instant
+  * Transformations (next to queries) > Add Transformation > `Filter fields by name`
+    * Deselect `Time`

@@ -2,12 +2,27 @@ services:
   prometheus:
     image: docker.io/prom/prometheus:v3.2.1
     container_name: prometheus
+    hostname: prometheus
     ports:
       - 9091:9090
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
       - lab
+
+  grafana:
+    image: docker.io/grafana/grafana:11.6.0
+    container_name: grafana
+    hostname: grafana
+    ports:
+      - 3000:3000
+    networks:
+      - lab
+    volumes:
+      - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
+      - ./grafana/dashboards/:/var/lib/grafana/dashboards/
 
   demo: &demo1
     image: demo

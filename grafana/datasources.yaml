@@ -1,0 +1,7 @@
+apiVersion: 1
+
+datasources:
+  - name: Demo Prometheus from file
+    uid: P56FCFCB76B280EB7
+    type: prometheus
+    url: http://prometheus:9090
