@@ -295,3 +295,93 @@ sum without(instance, status) (rate(demo_api_request_duration_seconds_count{job=
   * Options (under query) > Format > Type > Instant
   * Transformations (next to queries) > Add Transformation > `Filter fields by name`
     * Deselect `Time`
+
+## Lab 7.1 Run the Node Exporter
+* Node Exporter's [collector module documentation](https://github.com/prometheus/node_exporter#collectors)
+```
+docker run -d --name node-exporter --net host --pid host \
+  -v /:/host:ro,rslave docker.io/prom/node-exporter:v1.9.1 --path.rootfs=/host
+```
+* [http://localhost:9100/metrics](http://localhost:9100/metrics) to view the node exporter metrics
+
+## Lab 7.2 Monitor the Node Exporter
+* We need to add the node exporter to Prometheus' `scrape_configs` in `prometheus.yml:
+  * `hostname -i` uses the IP of your host because the node-exporter runs in your host network namespace
+  * On MacOS use `ipconfig getifaddr en0` instead
+  * It is also possible to use the hostname `node-exporter`
+```
+cat <<EOF >> ~/prometheus/prometheus.yml
+  - job_name: 'node'
+    static_configs:
+      - targets: ['$(hostname -i):9100']
+EOF
+```
+* Which will generate something like:
+```
+  - job_name: "node"
+    static_configs:
+      - targets: ['$(hostname -i):9100']
+```
+* Then restart prometheus: `docker restart prometheus`
+* Check that the node exporter shows in the list of targets
+  * [http://localhost:9090/targets](http://localhost:9090/targets)
+
+## Lab 7.3 Explore Node Exporter Metrics
+* [http://localhost:9100/metrics](http://localhost:9100/metrics) for all node metrics
+### CPU
+* `node_cpu_seconds_total` tracks how many seconds have been uses since boot time _per core_ (label `cpu`) and _per mode_ (label `mode`)
+  * Other labels include `instance` (host) and `job`
+  * Modes are `idle`, `iowait`, `irq`, `nice`,`softirq`, `steal`, `system`, `user`
+```
+rate(node_cpu_seconds_total{job="node"}[1m])
+```
+* To see actual CPU usage we'll filter out `idle` mode:
+```
+sum without(cpu) (rate(node_cpu_seconds_total{mode!="idle",job="node"}[1m]))
+```
+  * `mode!="idle"` removes the idle mode
+  * `sum (without(cpu))` gives us usage over **all** CPU cores by excluding the `cpu` label
+
+### Memory
+* Memory is made of "free", "buffers" and "cached" memory:
+```
+(
+  node_memory_MemFree_bytes{job="node"}
+  + 
+  node_memory_Buffers_bytes{job="node"}
+  +
+  node_memory_Cached_bytes{job="node"}
+) / 1024^3
+```
+* All three metrics are gauges
+* We then divide by `1024^3` to convert bytes into GB (Kilobytes > Megabytes > Gigabytes).
+
+### Filesystem
+* `node_filesystem_free_bytes` shows the free bytes on a filesystem
+* `node_filesystem_free_bytes` will tell you how many bytes in total the filesystem has
+* Together we can calculate filesystem usage:
+```
+(
+  node_filesystem_free_bytes
+  /
+  node_filesystem_size_bytes
+) * 100
+```
+* Can we see this usage over time?
+  * Both metrics are gauges
+
+### Network
+* To see incoming and outgoing network traffic, grouped by network interface:
+```
+rate(node_network_receive_bytes_total[1m])
++
+rate(node_network_transmit_bytes_total[1m])
+```
+* Both metrics are counters
+
+### Other metrics
+* `node_boot_time_seconds` - system's boot time as a unix timestamp
+  * `changes(node_boot_time_seconds[30m]) > 3` check for nodes that reboot frequently; 3 reboots in the last 30 minutes
+* `node_time_seconds` - current system time
+  * `node_time_seconds - timestamp(node_time_seconds)` compare prometheus' time to that of a scraped node
+  * `timestamp` gets the **scrape** timestamp of a **sample** node

@@ -42,6 +42,19 @@ services:
     ports:
       - 8086:8080
 
+  node-exporter:
+    image: docker.io/prom/node-exporter:v1.9.1
+    container_name: node-exporter
+    hostname: node-exporter
+    ports:
+      - 9100:9100
+    network_mode: host
+    pid: host
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /:/host:ro,rslave
+
 networks:
   lab:
     driver: bridge

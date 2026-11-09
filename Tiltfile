@@ -10,6 +10,10 @@ demo_dockerfile = str(read_file('./tmp/demo-service-source/Dockerfile')).replace
     'RUN --mount=type=secret,id=ca_cert cat /run/secrets/ca_cert >> /etc/ssl/certs/ca-certificates.crt && go mod download',
 )
 
+# Linux equivalent 'hostname -i'
+HOST_ADDR=local('ipconfig getifaddr en0')
+os.putenv('HOST_ADDR',HOST_ADDR)
+
 docker_build(
     'demo',
     './tmp/demo-service-source/',
@@ -18,3 +22,4 @@ docker_build(
 )
 
 docker_compose("./docker-compose.yml")
+
