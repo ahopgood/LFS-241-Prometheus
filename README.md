@@ -385,3 +385,53 @@ rate(node_network_transmit_bytes_total[1m])
 * `node_time_seconds` - current system time
   * `node_time_seconds - timestamp(node_time_seconds)` compare prometheus' time to that of a scraped node
   * `timestamp` gets the **scrape** timestamp of a **sample** node
+
+## Lab 8.1 Run cAdvisor
+* The [cAdvisor documentation on prometheus metrics](https://github.com/google/cadvisor/blob/73fc5bc7a65d4bfffb4b2dca0119b5bc0a8a50f5/docs/storage/prometheus.md)
+```
+docker run -d --name cadvisor -h cadvisor --net lab \
+  -v /:/rootfs:ro \
+  -v /var/run:/var/run:ro \
+  -v /sys:/sys:ro \
+  -v /var/lib/docker/:/var/lib/docker:ro \
+  -v /dev/disk/:/dev/disk:ro \
+  ghcr.io/google/cadvisor:v0.60.6
+```
+* [http://localhost:8081/metrics](http://localhost:8081/metrics) (depending on your port mappings)
+```
+curl http://$(docker inspect cadvisor \
+-f '{{ .NetworkSettings.Networks.lab.IPAddress }}'):8080/metrics
+```
+
+## Lab 8.2 Monitor cAdvisor
+Add cAdvisor to the `scrape_configs` in `prometheus.yml`
+```
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ['cadvisor:8080']
+```
+
+## Lab 8.3 Explore Container Metrics
+* Per container metrics have the `container` prefix
+  * `id` label corresponds to a container's full path name in the host's virtual cgroups fs
+    * `/sys/fs/cgroup/docker/7230bbfcad8a1ca963822fb28a06c25df7ba17a801c3c13cf17902
+38e53cb630/ `
+  * On cgrops v1 the `id` label is different, it has a _per resource_ label
+    * `memory`, `cpu`, `pids`
+    * `/sys/fs/cgroup/memory/docker/.../ `
+  * `image` label - present only when the containers set it
+    * e.g. `gcr.io/cadvisor/cadvisor:v0.52.1`
+  * `name` label - present only when the containers set it
+  * `container_cpu_usage_seconds_total` the number of cpu seconds used by each container, split by core
+* Per-second increase rate of CPU usage
+```
+rate(container_cpu_usage_seconds_total[1m])
+```
+* Total CPU usage in number of cores for the Grafana container
+```
+sum without(cpu) (rate(container_cpu_usage_seconds_total{name="grafana"}[1m]))
+```
+* To get a container's memory usage in bytes
+```
+container_memory_usage_bytes{name="grafana"}
+```

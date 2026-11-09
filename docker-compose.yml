@@ -55,6 +55,21 @@ services:
     volumes:
       - /:/host:ro,rslave
 
+  cAdvisor:
+    image: ghcr.io/google/cadvisor:v0.60.6
+    container_name: cAdvisor
+    hostname: cAdvisor
+    ports:
+      - 8081:8080
+    networks:
+      - lab
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+
 networks:
   lab:
     driver: bridge
