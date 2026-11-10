@@ -70,6 +70,14 @@ services:
       - /var/lib/docker:/var/lib/docker:ro
       - /dev/disk:/dev/disk:ro
 
+  lab-app:
+    image: lab-app
+    hostname: lab-app
+    ports:
+      - 8087:12345
+    networks:
+      - lab
+
 networks:
   lab:
     driver: bridge

@@ -435,3 +435,24 @@ sum without(cpu) (rate(container_cpu_usage_seconds_total{name="grafana"}[1m]))
 ```
 container_memory_usage_bytes{name="grafana"}
 ```
+
+## Lab 9.1
+Instrument the `main.go` file found in https://github.com/lftraining/LFS241.  
+You can use `main-instrumented.go` as a starting point.  
+
+* Remember to ensure you measure times for histograms
+* Also ensure you increment counters
+
+## Lab 9.2 Monitoring Your Instrumented Code
+Add your service to the scrape configuration in `prometheus.yml`
+```
+cat <<EOF >> ~/prometheus/prometheus.yml
+  - job_name: 'instrumentation-example'
+    static_configs:
+      - targets: ['lab-app:12345']
+EOF
+```
+* Verify it has been added to your scrape targets [http://localhost:9091/targets](http://localhost:9091/targets)
+* Trigger metics by hitting your endpoints a few times
+  * [http://localhost:8087/api/foo](http://localhost:8087/api/foo)
+  * [http://localhost:8087/api/bar](http://localhost:8087/api/bar)
