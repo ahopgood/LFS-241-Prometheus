@@ -78,6 +78,17 @@ services:
     networks:
       - lab
 
+  cpu-exporter:
+    image: cpu-exporter
+    hostname: cpu-exporter
+    pid: host
+    environment:
+      LC_ALL: "C"
+    ports:
+      - 8089:8000
+    networks:
+      - lab
+
 networks:
   lab:
     driver: bridge

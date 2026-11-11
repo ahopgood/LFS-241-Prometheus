@@ -309,7 +309,7 @@ docker run -d --name node-exporter --net host --pid host \
   * `hostname -i` uses the IP of your host because the node-exporter runs in your host network namespace
   * On MacOS use `ipconfig getifaddr en0` instead
   * It is also possible to use the hostname `node-exporter`
-```
+```yaml
 cat <<EOF >> ~/prometheus/prometheus.yml
   - job_name: 'node'
     static_configs:
@@ -317,7 +317,7 @@ cat <<EOF >> ~/prometheus/prometheus.yml
 EOF
 ```
 * Which will generate something like:
-```
+```yaml
   - job_name: "node"
     static_configs:
       - targets: ['$(hostname -i):9100']
@@ -388,7 +388,7 @@ rate(node_network_transmit_bytes_total[1m])
 
 ## Lab 8.1 Run cAdvisor
 * The [cAdvisor documentation on prometheus metrics](https://github.com/google/cadvisor/blob/73fc5bc7a65d4bfffb4b2dca0119b5bc0a8a50f5/docs/storage/prometheus.md)
-```
+```bash
 docker run -d --name cadvisor -h cadvisor --net lab \
   -v /:/rootfs:ro \
   -v /var/run:/var/run:ro \
@@ -405,7 +405,7 @@ curl http://$(docker inspect cadvisor \
 
 ## Lab 8.2 Monitor cAdvisor
 Add cAdvisor to the `scrape_configs` in `prometheus.yml`
-```
+```yaml
   - job_name: "cadvisor"
     static_configs:
       - targets: ['cadvisor:8080']
@@ -445,7 +445,7 @@ You can use `main-instrumented.go` as a starting point.
 
 ## Lab 9.2 Monitoring Your Instrumented Code
 Add your service to the scrape configuration in `prometheus.yml`
-```
+```yaml
 cat <<EOF >> ~/prometheus/prometheus.yml
   - job_name: 'instrumentation-example'
     static_configs:
@@ -456,3 +456,77 @@ EOF
 * Trigger metics by hitting your endpoints a few times
   * [http://localhost:8087/api/foo](http://localhost:8087/api/foo)
   * [http://localhost:8087/api/bar](http://localhost:8087/api/bar)
+* Metrics can be viewed directly [http://localhost:8087/metrics](http://localhost:8087/metrics)
+
+## Lab 10.1 Studying and Running an Example Exporter
+```
+mkdir cpu-exporter
+```
+* Create a file called `cpu_exporter.py`
+```python
+import time
+import psutil
+
+from prometheus_client import start_http_server
+from prometheus_client.core import CounterMetricFamily, REGISTRY
+
+class CPUCollector(object):
+  def collect(self):
+    c = CounterMetricFamily('cpu_exporter_cpu_usage_seconds_total', 'The total number of CPU seconds used per mode.', labels=['mode']) 
+    for mode, usage_seconds in psutil.cpu_times()._asdict().items():
+      c.add_metric([mode], usage_seconds)
+    yield c
+
+REGISTRY.register(CPUCollector())
+
+if __name__ == '__main__':
+  start_http_server(8000)
+  while True:
+    time.sleep(1)
+```
+* The server is started on port `8000`
+* It calls `collect()` on the `CPUCollector` class _once per scrape_
+* The `psutil` library is used to fetch the current CPU usage
+* A `CounterMetricFamily` is used to translate the usage into a "throw away" Prometheus metrics family
+* A metrics family is a group of series with the same metric name but different labels
+
+Create a Dockerfile to package up the custom exporter
+```dockerfile
+FROM docker.io/python:3.13
+WORKDIR /usr/src/cpu-exporter/
+RUN pip install --no-cache-dir prometheus_client psutil
+COPY ./cpu_exporter.py .
+EXPOSE 8000
+CMD ["python","cpu_exporter.py"]
+```
+* Build `docker build -t cpu-exporter .`
+* Run as a container in the lab network:
+```
+docker run -d --net lab --pid host \
+  --name cpu-exporter \
+  -h cpu-exporter \
+  -e LC_ALL=C cpu-exporter
+```
+* Add the scrape configuration to prometheus
+```yaml
+cat <<EOF >> ~/prometheus/prometheus.yml
+- job_name: 'cpu-exporter'
+static_configs:
+- targets: ['cpu-exporter:8000']
+EOF
+```
+We can now query our own exporter for cpu usage:
+```
+rate(cpu_exporter_cpu_usage_seconds_total{job="cpu-exporter"}[1m])
+```
+And can compare it to the one from the node exporter, they should look identical
+```
+sum without(cpu)(rate(node_cpu_seconds_total{job="node"}[1m]))
+```
+* Note we have to exclude the `cpu` label from the node exporter aggregation since our own metric doesn't give a _per core_ breakdown
+
+## Lab 11.1 Histograms and Calculating Quantiles
+* Prometheus v2.40 and above support ["native histograms"](https://prometheus.io/docs/specs/native_histograms/) which:
+  * do not require configuration of bucket boundaries during instrumentation
+  * reduce the cost of empty buckets
+* We're using classic histograms here

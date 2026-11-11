@@ -44,5 +44,7 @@ ca_docker_build(
     only=['./main.go'],
 )
 
+docker_build('cpu-exporter', 'cpu-exporter')
+
 docker_compose("./docker-compose.yml")
 
