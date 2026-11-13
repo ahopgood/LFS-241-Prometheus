@@ -530,3 +530,150 @@ sum without(cpu)(rate(node_cpu_seconds_total{job="node"}[1m]))
   * do not require configuration of bucket boundaries during instrumentation
   * reduce the cost of empty buckets
 * We're using classic histograms here
+[* A histogram gives you an idea of:
+  * the **distribution** of request durations
+  * how many of your **requests take longer than x ms**](https://prometheus.io/docs/practices/histograms/#errors-of-quantile-estimation)
+* To calculate _quantiles_ (e.g. 99th percentile) you need `histogram_quantile()`
+  * First parameter is a number between `0` and `1` 
+  * Second parameter is a histogram
+  * Take the `rate()` of the histogram otherwise you get a quantile over the **entire lifetime** of the bucket counters
+```
+histogram_quantile(0.9, rate(demo_api_request_duration_seconds_bucket{job="demo"}[5m]))
+```
+* To see overall system latency you can aggregate away some labels
+  * Don't aggregate away the `le` label as it is required
+```
+histogram_quantile(
+  0.9,
+  sum without(status, method) (
+    rate(demo_api_request_duration_seconds_bucket{job="demo"}[5m])
+  )
+)
+```
+
+## Lab 11.2 Filtering by Sample Value
+We can select series by their metric name and label values, we can also filter by sample value as well.  
+### Time Series against a scalar
+You can apply a binary comparison between a time series vector and a scalar number.  
+A use case is thresholds in alerting expressions:
+* Only `500` errors above 0.2 per second:
+```
+rate(demo_api_request_duration_seconds_count{status="500",job="demo"}[5m]) > 0.2
+```
+* Works for all comparison operators: `<`, `<=`, `>=`, `!=`, `==`
+
+### Time Series against Time Series
+Select all `500` statuses that are `x50` larger than the _total_ traffic, for a given path, method and instance:
+```
+rate(demo_api_request_duration_seconds_count{status="500",job="demo"}[5m]) * 50
+> ignoring(status)
+  sum without(status)
+(rate(demo_api_request_duration_seconds_count{job="demo"}[5m]))
+```
+* Why use a `sum without()` on the right hand expression?
+  * We need to aggregate the results and then strip out status
+* Why **don't** we need it on the left expression?
+  * Because we're already filtering by status to include only `500`
+* Why use the `ignoring()` clause?
+  * This ensures series on the left **and** right are matched on all of their labels except status
+  * Without this clause the left hand side series would still contain `status=500` and won't match
+  * This also means that any series with an unmatched label is dropped
+
+## Lab 11.3 Performing Set Operations
+* Correlating two series based on the _mutual_ presence of labels
+* `and`, `or`, `unless` are set operators
+
+### And
+* `and` performs set **intersection**, it allows you to select only a series in a vector that have the same labels in a second vector 
+* Graph the status `500` error rates 
+  * **only** for those whose `path`, `method` and `instance` combinations 
+  * have a request rate _larger_ than 10 per second
+```
+sum without(status)
+(rate(demo_api_request_duration_seconds_count{job="demo",status="500"}[5m]))
+and
+sum without(status)
+(rate(demo_api_request_duration_seconds_count{job="demo"}[5m])) > 10
+```
+* Filter by status on the left expression
+* Aggregate and then exclude the status from _both_ so we can perform operations
+* Use `and` to leave just `path`, `method` and `instance` series
+
+### Or
+* `or` performs set **union** and allows you to select label sets from two series that are in **either** of the two vectors
+* Each sample will be taken from the left-hand side if present
+* Will use the right hand if not present
+* Useful for when you're missing label combinations in one vector and want to fill them in with values from another vector
+
+Use case, we want the `500` status rate for **all paths** that have _ever_ received HTTP requests.
+* No series exist for endpoints that haven't received a `500`
+* Using or allows us to fill in the labels from the total request count to the empty series
+```
+sum by(path)
+(rate(demo_api_request_duration_seconds_count{job="demo",status="500"}[5m]))
+or
+sum by(path) (rate(demo_api_request_duration_seconds_count{job="demo"}[5m])) *
+0
+```
+* We will now see the `500` error rate for the `/api/nonexistent` path which only typically returns `404`
+
+### Unless
+* `unless` performs set **complement** will only propagate labels from one vector into another if they are **not** found in the second vector
+
+## Lab 11.4 Working with Timestamp Metrics
+Some services and exporters will encode a timestamp into the **sample value** of a metric (note, not a label).  
+The demo service exposes the last successful run of a batch job
+```
+demo_batch_last_success_timestamp_seconds{job="demo"}
+```
+This produces a staircase graph, typically though you want to calculate a _duration_:
+```
+time() - demo_batch_last_success_timestamp_seconds{job="demo"}
+```
+It can then be combined with a threshold to detect jobs that have not finished in the last 1.5 minutes (90 seconds):
+```
+time() - demo_batch_last_success_timestamp_seconds{job="demo"} > 1.5 * 60
+```
+
+## Lab 11.5 Offsetting Data
+Offsetting allows you to compare current system data with behaviour from the past.  
+
+```
+rate(demo_api_request_duration_seconds_count{job="demo"}[5m] offset 1h)
+```
+Calculate a ratio between the current rate and the one an hour ago
+```
+rate(demo_api_request_duration_seconds_count{job="demo"}[5m])
+/
+rate(demo_api_request_duration_seconds_count{job="demo"}[5m] offset 1h)
+```
+
+## Lab 11.6 Sorting and Limiting
+In the table view it can be useful to sort query results, it has no impact on graphs
+```
+sort_desc(sum by(path) (rate(demo_api_request_duration_seconds_count{job="demo"}[5m])))
+```
+To show the top or bottom k results of a query use `topk(k, ...)` or `bottomk(k, ...)`
+Show the top 3 request rates for each `path` and `method`:
+```
+topk(3, sum by(path, method) (rate(demo_api_request_duration_seconds_count{job="demo"}[5m])))
+```
+
+## Lab 11.7 Inspecting Scrape Health
+When prometheus cannot scrape a target it records this in a metric:
+```
+up{job="demo"}
+```
+* It is binary 1 - up, 0 - down
+```
+up{job="demo"} == 0
+```
+If you wanted to alert when half of all demo services are down:
+```
+count by(job) (up{job="demo"} == 0)
+/
+count by(job) (up{job="demo"})
+> 0.5
+```
+  * A simpler version is `1 - avg by(job) (up{job="demo"}) > 0.5`
+
