@@ -34,6 +34,10 @@ scrape_configs:
         - 'demo1:8080'
         - 'demo2:8080'
         - 'demo3:8080' # using hostname from docker run / docker-compose for discovery
+    metric_relabel_configs: # only keep metrics that start with demo or http, drop the others
+      - action: keep
+        source_labels: [ __name__ ]
+        regex: '(demo_|http_).*'
 
   - job_name: "node"
     static_configs:

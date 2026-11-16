@@ -677,3 +677,24 @@ count by(job) (up{job="demo"})
 ```
   * A simpler version is `1 - avg by(job) (up{job="demo"}) > 0.5`
 
+## Lab 12.1 Relabelling
+* [`relabel_config` documentation](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config)
+* [kubernetes scrape discovery](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config) for `__meta_` labels that can be relabelled
+* Query `{job="demo"}` in table mode and view the number of entries under `Result series`
+* We want to drop all metrics that aren't our application metrics
+  * Keep `demo_` and `http_` metrics
+  * Restart prometheus
+```
+  - job_name: "demo"
+    static_configs:
+      - targets:
+        - 'demo1:8080'
+        - 'demo2:8080'
+        - 'demo3:8080' # using hostname from docker run / docker-compose for discovery
+    metric_relabel_configs:
+      - action: keep
+        source_labels: [__name__]
+        regex: '(demo_|http_).*'
+        # only keep metrics that start with demo or http, drop the others
+```
+* Query `{job="demo"}`, you should see a drop in `Result series` in the table view

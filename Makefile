@@ -4,6 +4,7 @@ start:
 	ctlptl apply -f cluster.yaml
 	tilt up --port 10351
 stop:
+	tilt down --delete-namespaces
 	ctlptl delete cluster ${CLUSTER_NAME}
 	ctlptl delete registry ctlptl-prometheus-registry
 
