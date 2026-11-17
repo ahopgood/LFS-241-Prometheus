@@ -756,3 +756,28 @@ EOF
 
 ## Lab 13.2 Configuring File-Based Discovery
 [`file_sd`discovery mechanism](https://prometheus.io/docs/prometheus/latest/configuratian/configuration/#file_sd_config)  documentation.
+Add a scrape config to Prometheus to read the `targets.yml` file:
+```
+cat <<EOF >> ~/prometheus/prometheus.yml
+  - job_name: 'file-sd-demo'
+    file_sd_configs:
+      - files:
+        - 'targets.yml'
+EOF
+```
+Add a new file `targets.yml` in the same directory as your `prometheus.yml` (either to the volume directory or a direct named file volume)
+```
+- targets:
+    - 'd1:8080'
+    - 'd2:8080'
+  labels:
+    env: production
+- targets:
+    - 'd3:8080'
+  labels:
+    env: staging
+```
+* You can view the metrics under the job name `{job="file-sd-demo"}`
+* Prometheus will watch the file and update the scrape when you make changes
+  * When making updates in production make sure to do so **atomically** so that _partial_ updates don't happen
+  * Do this by making changes to a _copy_ of the file and then `mv/cp` it to the directory prometheus is watching

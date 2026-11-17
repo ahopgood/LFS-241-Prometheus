@@ -62,3 +62,8 @@ scrape_configs:
       - action: keep
         source_labels: [ __meta_consul_service ]
         regex: demo
+
+  - job_name: 'file-sd-demo'
+    file_sd_configs:
+      - files:
+        - '/etc/prometheus/targets.yml'

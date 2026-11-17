@@ -1,0 +1,9 @@
+- targets:
+    - 'demo1:8080'
+    - 'demo2:8080'
+  labels:
+    env: production
+- targets:
+    - 'demo3:8080'
+  labels:
+    env: staging
