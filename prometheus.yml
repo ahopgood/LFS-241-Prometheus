@@ -28,20 +28,20 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  - job_name: "demo"
-    static_configs:
-      - targets:
-        - 'demo1:8080'
-        - 'demo2:8080'
-        - 'demo3:8080' # using hostname from docker run / docker-compose for discovery
-    metric_relabel_configs: # only keep metrics that start with demo or http, drop the others
-      - action: keep
-        source_labels: [ __name__ ]
-        regex: '(demo_|http_).*'
+#  - job_name: "demo"
+#    static_configs:
+#      - targets:
+#        - 'demo1:8080'
+#        - 'demo2:8080'
+#        - 'demo3:8080' # using hostname from docker run / docker-compose for discovery
+#    metric_relabel_configs: # only keep metrics that start with demo or http, drop the others
+#      - action: keep
+#        source_labels: [ __name__ ]
+#        regex: '(demo_|http_).*'
 
   - job_name: "node"
     static_configs:
-      - targets: ['host.docker.internal:9100'] # node-exporter uses host networking; Colima forwards the port to the Mac host
+      - targets: ['host.docker.internal:9100']
 
   - job_name: "cadvisor"
     static_configs:
@@ -54,3 +54,11 @@ scrape_configs:
   - job_name: "cpu-exporter"
     static_configs:
       - targets: ['cpu-exporter:8000']
+
+  - job_name: 'consul-sd-demo'
+    consul_sd_configs:
+      - server: 'consul:8500'
+    relabel_configs:
+      - action: keep
+        source_labels: [ __meta_consul_service ]
+        regex: demo

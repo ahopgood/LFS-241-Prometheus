@@ -1,0 +1,22 @@
+{
+  "services": [
+    {
+      "id": "demo1",
+      "name": "demo",
+      "address": "demo1",
+      "port": 8080
+    },
+    {
+      "id": "demo2",
+      "name": "demo",
+      "address": "demo2",
+      "port": 8080
+    },
+    {
+      "id": "demo3",
+      "name": "demo",
+      "address": "demo3",
+      "port": 8080
+    }
+  ]
+}

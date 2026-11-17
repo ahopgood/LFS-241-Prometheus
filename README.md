@@ -698,3 +698,61 @@ count by(job) (up{job="demo"})
         # only keep metrics that start with demo or http, drop the others
 ```
 * Query `{job="demo"}`, you should see a drop in `Result series` in the table view
+
+## Lab 13.1 Setting Up Consul-Based Discovery
+Prometheus has native support for [Consul](https://developer.hashicorp.com/consul) service discovery.  
+Create a configuration file `demo-service.json`, this will define each of our demo services:
+  * worth noting when using docker compose to deploy you'll want the hostname to match, e.g. demo1, demo2, demo3 not d1, d2, d3
+```json
+{
+  "services": [
+    {
+      "id": "demo1",
+      "name": "demo",
+      "address": "d1",
+      "port": 8080
+    },
+    {
+      "id": "demo2",
+      "name": "demo",
+      "address": "d2",
+      "port": 8080
+    },
+    {
+      "id": "demo3",
+      "name": "demo",
+      "address": "d3",
+      "port": 8080
+    }
+  ]
+}
+```
+Next start consul in development mode, providing our configuration file from above:
+```
+docker run -d --net lab --name consul -h consul \
+  -v ./demo-service.json:/etc/consul/demo-service.json \
+  docker.io/hashicorp/consul:1.20 \
+  agent -bind=0.0.0.0 -client=0.0.0.0 -dev \
+  -config-file=/etc/consul/demo-service.json
+```
+Consul also registers itself as a target.  
+
+To make Prometheus discover the demo service targets from Consul we add the following scrape file:
+```
+cat <<EOF >> ~/prometheus/prometheus.yml
+  - job_name: 'consul-sd-demo'
+    consul_sd_configs:
+      - server: 'consul:8500'
+    relabel_configs:
+      - action: keep
+        source_labels: [__meta_consul_service]
+        regex: demo
+EOF
+```
+* We're using **relabelling** here to exclude the consul service as it doesn't have `/metrics` endpoint 
+* Now consul should show as a scrape target
+* Use `{job="consul-sd-demo"}` as a query to discover the demo service metrics 
+
+
+## Lab 13.2 Configuring File-Based Discovery
+[`file_sd`discovery mechanism](https://prometheus.io/docs/prometheus/latest/configuratian/configuration/#file_sd_config)  documentation.

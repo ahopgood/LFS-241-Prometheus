@@ -47,7 +47,7 @@ services:
     container_name: node-exporter
     hostname: node-exporter
     ports:
-      - 9100:9100
+      - 9101:9100 # was clashing with local sonarqube on port 9100
     network_mode: host
     pid: host
     command:
@@ -88,6 +88,22 @@ services:
       - 8089:8000
     networks:
       - lab
+
+  consul:
+    image: docker.io/hashicorp/consul:1.20
+    hostname: consul
+    ports:
+      - "8500:8500"
+    command:
+      - "agent"
+      - "-bind=0.0.0.0"
+      - "-client=0.0.0.0"
+      - "-dev"
+      - "-config-file=/etc/consul/demo-service.json"
+    volumes:
+      - ./demo-service.json:/etc/consul/demo-service.json
+    networks:
+        - lab
 
 networks:
   lab:
