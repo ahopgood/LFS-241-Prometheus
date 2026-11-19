@@ -106,6 +106,26 @@ services:
     networks:
         - lab
 
+  blackbox-exporter:
+    image: docker.io/prom/blackbox-exporter:v0.26.0
+    hostname: blackbox-exporter
+    ports:
+      - "9115:9115"
+    command:
+      - "--config.file=/config/blackbox.yml"
+    volumes:
+      - ./blackbox.yml:/config/blackbox.yml
+    networks:
+      - lab
+
+  pushgateway:
+    image: docker.io/prom/pushgateway:v1.11.0
+    hostname: pushgateway
+    ports:
+      - 9092:9091
+    networks:
+      - lab
+
 networks:
   lab:
     driver: bridge

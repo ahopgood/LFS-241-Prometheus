@@ -781,3 +781,161 @@ Add a new file `targets.yml` in the same directory as your `prometheus.yml` (eit
 * Prometheus will watch the file and update the scrape when you make changes
   * When making updates in production make sure to do so **atomically** so that _partial_ updates don't happen
   * Do this by making changes to a _copy_ of the file and then `mv/cp` it to the directory prometheus is watching
+
+## Lab 14.1 Set Up Blackbox Exporter
+[Blackbox exporter docs](https://github.com/prometheus/blackbox_exporter/blob/master/README.md)
+
+A target has the following relabelling applied:
+* Target address -copied-to-> `__param_target`
+* `__param_target` -copied-to-> `instance`  
+* `__address__` -updated-to-> the blackbox exporter IP
+
+```
+__address__ myservice.com
+__param_target nil
+instance myservice1
+```
+Becomes
+```
+__address__ blackbox-exporter:9115
+__param_target myservice.com
+instance myservice.com
+```
+
+Create the `blackbox.yml` configuration file:
+```
+cat <<EOF >> ~/blackbox.yml
+  modules:
+    http_2xx:
+      prober: http
+      timeout: 2s
+      http:
+        method: GET
+```
+Start the blackbox exporter:
+```
+docker run -d --net lab --name blackbox-exporter -h bb-exporter \
+-p 9115:9115 -v ~/blackbox.yml:/config/blackbox.yml \
+docker.io/prom/blackbox-exporter:v0.26.0 \
+--config.file=/config/blackbox.yml
+```
+You can see the blackbox exporter output by pointing it at prometheus.io
+Try heading to
+[http://localhost:9115/probe?target=https://prometheus.io&module=http_2xx](http://localhost:9115/probe?target=https://prometheus.io&module=http_2xx)
+
+## Lab 14.2 Probing Example Services
+Add the blackbox exporter scrape config to your `prometheus.yaml`:
+```yaml
+cat <<EOF >> ~/prometheus/prometheus.yml
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module:
+        - http_2xx # Look for an HTTP 200 response.
+    static_configs:
+      - targets: # Targets to probe through the Blackbox Exporter.
+        - 'http://prometheus.io'
+        - 'https://prometheus.io'
+        - 'http://example.com:8080'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115 # Blackbox Exporter address.
+EOF
+```
+With this in place prometheus should start scraping the blackbox exporter, you should see it under [http://localhost:9091/targets](http://localhost:9091/targets)
+* Probe targets will all show as `UP` but that doesn't mean the probes succeeded
+* It means the scrape succeeded
+
+The `http` prober module has several metrics:
+* `probe_duration_seconds` - how many seconds the backend probe took
+* `probe_success` - if the probe was successful (0 failure or 1 success)
+* `probe_http_status_code` - the backend's HTTP status
+* `probe_http_content_length` - the length in byte of the backend HTTP response content
+* `probe_http_redirects` - how many redirects were followed
+* `probe_http_ssl` - whether the probe used SSL in the final redirect (0 or 1)
+* `probe_ssl_earliest_cert_expiry` - for an SSL request, what is the timestamp of the certificate expiry
+* `probe_ip_protocol` - IP protocol version used for the probe (4 or 6)
+
+You can see the probe results with the following query:
+```
+probe_success{job="blackbox"}
+```
+This should show:
+```
+probe_success{instance="http://prometheus.io", job="blackbox"}	1
+probe_success{instance="https://prometheus.io", job="blackbox"}	1
+probe_success{instance="http://example.com:8080", job="blackbox"}	0
+```
+
+You can find out how many days until the [https://promoetheus.io](https://prometheus.io) SSL certificate expires:
+```
+(
+probe_ssl_earliest_cert_expiry{instance="https://prometheus.io"}
+-
+time()
+) / 86400
+```
+* This sort of expression is useful for alerting on expiring certificates
+
+## Lab 15.1 Running the Pushgateway
+Pushgateway does not require configuration, if you want to persist metrics across restarts you can use the `--persistence.fail` command line flag:
+```
+docker run -d --net lab --name pushgateway -h pushgateway -p 9091:9091 \
+  docker.io/prom/pushgateway:v1.11.0
+```
+* Its web interface can be found on [http://localhost:9091](http://localhost:9091)
+
+## Lab 15.2 Monitoring the Pushgateway
+Pushgateway exposes metrics about itself as well as group of metrics of the jobs pushed to it all under the `/metrcs` endpoint.  
+Add Pushgateway to the `scrape_configs` sections of your `prometheus.yml` config:
+```
+cat <<EOF >> ~/prometheus/prometheus.yml
+  - job_name: 'pushgateway'
+    honor_labels: true
+    static_configs:
+      - targets: ['pushgateway:9091']
+EOF
+```
+* The `honor_labels: true` scrape option allows the labels from the original jobs to carry through _without_ prometheus overwriting them
+  * see [pushgateway documentation](https://github.com/prometheus/pushgateway#about-the-job-and-instance-labels) for more details 
+
+## Lab 15.3 Pushing Metrics From a Batch Job
+We're going to simulate a batch job with curl
+```
+cat <<EOF | curl --data-binary @- http://localhost:9091/metrics/job/demo_batch_job
+# TYPE demo_batch_job_last_successful_run_timestamp_seconds gauge
+# HELP demo_batch_job_last_successful_run_timestamp_seconds The Unix timestamp in seconds of the last successful batch job run. 
+demo_batch_job_last_successful_run_timestamp_seconds $(date +%s)
+# TYPE demo_batch_job_last_run_timestamp_seconds gauge
+# HELP demo_batch_job_last_run_timestamp_seconds The Unix timestamp in seconds of the last successful batch job run. 
+demo_batch_job_last_run_timestamp_seconds $(date +%s)
+# TYPE demo_batch_job_users_deleted gauge
+# HELP demo_batch_job_users_deleted How many users were deleted in the last batch job run.
+demo_batch_job_users_deleted $RANDOM
+EOF
+```
+* We're using `$(date +%s)` to generate timestamps
+* The `$RANDOM` shell var is being used to generate a number between 0 and 32767 for the number of deleted users 
+* You may need to regenerate the random var with `echo $RANDOM` before sending the next request
+
+After running visit the pushgateway [http://localhost:9091/metrics](http://localhost:9091/metrics) to view the metrics
+* Run a few more times to see the metrics change
+
+## Lab 15.4 Working with Batch Job metrics
+Batch job metrics should now be queryable in prometheus.  
+How many seconds since the last successful job ran: 
+```
+time() - demo_batch_job_last_successful_run_timestamp_seconds
+```
+Jobs that have not run successfully within the last hour:
+```
+time() - demo_batch_job_last_successful_run_timestamp_seconds > 60*60
+```
+When a job is deprovisioned you need to delete their metrics from the Pushgateway so that prometheus stops scraping them:
+```
+curl -XDELETE http://localhost:9091/metrics/job/demo_batch_job
+```
